@@ -54,6 +54,10 @@
 
 static Display_Handle display;
 
+static void i2cErrorHandler(I2C_Transaction *transaction,
+    Display_Handle display);
+
+extern I2C_Transaction gi2cTransaction;
 
 /*
  *  ======== mainThread ========
@@ -73,13 +77,13 @@ void *mainThread(void *arg0)
     uint8_t mcuType = 0xff; //MCU type of biometric sensor hub
 
     uint8_t globalStatus = 0x01; //global status for testing library
-    bool libraryTest = true; //variable for testing the library
-    bool dataStream = false; //log data via excel data streamer
+    bool libraryTest = false; //variable for testing the library
+    bool dataStream = true; //log data via excel data streamer
 
 
-    uint8_t userMode = MODE_ONE;
+    uint8_t userMode = MODE_TWO;
     uint8_t intThresh = 0x01;
-    uint8_t outFormat = ALGO_DATA;
+    uint8_t outFormat = SENSOR_AND_ALGORITHM;
 
     int numSamples = 1500; //number of samples to take during the test
 
@@ -176,12 +180,13 @@ void *mainThread(void *arg0)
 
         if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting beginI2C...");
         deviceMode = beginI2C(i2c, &statusByte);
-        if(statusByte){ //if we get a non-zero status byte from I2C transaction
+        if(statusByte || gi2cTransaction.status){ //if we get a non-zero status byte from I2C transaction or have an error with the I2C bus
             GPIO_write(Board_GPIO_LED0, CONFIG_GPIO_LED_ON);
             GPIO_write(Board_GPIO_LED1, CONFIG_GPIO_LED_OFF);
             if(!dataStream){
                 Display_printf(display, 0, 0, "beginI2C Failed."); //print that there was a transfer issue
                 Display_printf(display, 0, 0, "Error byte: 0x%02x ", statusByte); //print that there was a transfer issue
+                i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
             }
             globalStatus &= 0x00;
         }
@@ -199,11 +204,12 @@ void *mainThread(void *arg0)
         if(libraryTest){
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting setDeviceMode...");
             deviceMode = setDeviceMode(RESET, &statusByte);
-            if(statusByte || deviceMode != RESET){ //if had a I2C transaction error or we're not in the reset mode
+            if(statusByte || deviceMode != RESET || gi2cTransaction.status){ //if had a I2C transaction error or we're not in the reset mode or I2C bus error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error testing setDeviceMode "); //indicate error
                     Display_printf(display, 0, 0, "Error: 0x%02x ", statusByte); //print error message
                     Display_printf(display, 0, 0, "Read state: 0x%02x ", deviceMode); //print out data
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -222,12 +228,13 @@ void *mainThread(void *arg0)
         if(libraryTest){ //if we're testing the library and want to test the software reset function
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting softwareResetMAX32664...");
             statusByte = softwareResetMAX32664();
-            if(statusByte){ //if we get a non-zero status byte from I2C transaction
+            if(statusByte || gi2cTransaction.status){ //if we get a non-zero status byte from I2C transaction or I2C bus error
                 GPIO_write(Board_GPIO_LED0, CONFIG_GPIO_LED_ON);
                 GPIO_write(Board_GPIO_LED1, CONFIG_GPIO_LED_OFF);
                 if(!dataStream){
                     Display_printf(display, 0, 0, "softwareResetMAX32664 Failed."); //print that there was a transfer issue
                     Display_printf(display, 0, 0, "Error byte: 0x%02x ", statusByte); //print that there was a transfer issue
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00;
             }
@@ -250,12 +257,13 @@ void *mainThread(void *arg0)
             if(!dataStream) Display_printf(display, 0, 0, "Delay to let FIFO fill");
             sleep(5); //sleep to allow FIFO to fill with some data
             body = readRawData(&statusByte); //read a set of raw data
-            if(statusByte){
+            if(statusByte || gi2cTransaction.status){ //if we had a sensor hub error or an I2C bus error
                 GPIO_write(Board_GPIO_LED0, CONFIG_GPIO_LED_ON);
                 GPIO_write(Board_GPIO_LED1, CONFIG_GPIO_LED_OFF);
                 if(!dataStream){
                     Display_printf(display, 0, 0, "readRawData Failed."); //print that there was an issue with the function
-                    Display_printf(display, 0, 0, "Error: 0x%02x", statusByte);
+                    Display_printf(display, 0, 0, "Error byte: 0x%02x", statusByte);
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00;
             }
@@ -277,12 +285,13 @@ void *mainThread(void *arg0)
             if(!dataStream) Display_printf(display, 0, 0, "Delay to let FIFO fill");
             sleep(5); //sleep to allow FIFO to fill with some data
             body = readAlgoData(&statusByte); //read a set of raw data
-            if(statusByte){
+            if(statusByte || gi2cTransaction.status){ //if we had a sensor hub error or an I2C bus error
                 GPIO_write(Board_GPIO_LED0, CONFIG_GPIO_LED_ON);
                 GPIO_write(Board_GPIO_LED1, CONFIG_GPIO_LED_OFF);
                 if(!dataStream){
                     Display_printf(display, 0, 0, "readAlgoData Failed."); //print that there was an issue with the function
-                    Display_printf(display, 0, 0, "Error: 0x%02x", statusByte);
+                    Display_printf(display, 0, 0, "Error byte: 0x%02x", statusByte);
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00;
             }
@@ -309,12 +318,13 @@ void *mainThread(void *arg0)
             if(!dataStream) Display_printf(display, 0, 0, "Delay to let FIFO fill");
             sleep(5); //sleep to allow FIFO to fill with some data
             body = readRawAndAlgoData(&statusByte); //read a set of raw data
-            if(statusByte){
+            if(statusByte || gi2cTransaction.status){ //if we had a sensor hub error or a I2C bus error
                 GPIO_write(Board_GPIO_LED0, CONFIG_GPIO_LED_ON);
                 GPIO_write(Board_GPIO_LED1, CONFIG_GPIO_LED_OFF);
                 if(!dataStream){
                     Display_printf(display, 0, 0, "readRawAndAlgoData Failed."); //print that there was an issue with the function
-                    Display_printf(display, 0, 0, "Error: 0x%02x", statusByte);
+                    Display_printf(display, 0, 0, "Error byte: 0x%02x", statusByte);
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00;
             }
@@ -340,12 +350,13 @@ void *mainThread(void *arg0)
         if(libraryTest){
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting getAfeAttributesMAX30101...");
             max30101Attr = getAfeAttributesMAX30101(&statusByte); //get the MAX30101 attributes
-            if(statusByte){
+            if(statusByte || gi2cTransaction.status){ //if we had a sensor hub error or an I2C bus error
                 GPIO_write(Board_GPIO_LED0, CONFIG_GPIO_LED_ON);
                 GPIO_write(Board_GPIO_LED1, CONFIG_GPIO_LED_OFF);
                 if(!dataStream){
                     Display_printf(display, 0, 0, "getAfeAttributesMAX30101 Failed."); //print that there was an issue with the function
-                    Display_printf(display, 0, 0, "Error: 0x%02x", statusByte);
+                    Display_printf(display, 0, 0, "Error byte: 0x%02x", statusByte);
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00;
             }
@@ -365,12 +376,13 @@ void *mainThread(void *arg0)
         if(libraryTest){
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting getAfeAttributesAccelerometer...");
             accelAttr = getAfeAttributesAccelerometer(&statusByte); //get the accelerometer attributes
-            if(statusByte){
+            if(statusByte || gi2cTransaction.status){ //if we had a sensor hub error or an I2C bus error
                 GPIO_write(Board_GPIO_LED0, CONFIG_GPIO_LED_ON);
                 GPIO_write(Board_GPIO_LED1, CONFIG_GPIO_LED_OFF);
                 if(!dataStream){
                     Display_printf(display, 0, 0, "getAfeAttributesAccelerometer Failed."); //print that there was an issue with the function
-                    Display_printf(display, 0, 0, "Error: 0x%02x", statusByte);
+                    Display_printf(display, 0, 0, "Error byte: 0x%02x", statusByte);
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00;
             }
@@ -390,13 +402,14 @@ void *mainThread(void *arg0)
         if(libraryTest){
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting getExtAccelMode...");
             extAccelMode = getExtAccelMode(&statusByte); //get the mode for the external accelerometer
-            if(statusByte || extAccelMode == ERR_UNKNOWN){
+            if(statusByte || extAccelMode == ERR_UNKNOWN  || gi2cTransaction.status){ //if we had a sensor hub error or an unknown accelerometer mode or an I2C bus error
                 GPIO_write(Board_GPIO_LED0, CONFIG_GPIO_LED_ON);
                 GPIO_write(Board_GPIO_LED1, CONFIG_GPIO_LED_OFF);
                 if(!dataStream){
                     Display_printf(display, 0, 0, "getExtAccelMode Failed."); //print that there was an issue with the function
                     Display_printf(display, 0, 0, "Error: 0x%02x", statusByte);
                     Display_printf(display, 0, 0, "Ext. Accl. Mode: %d ", extAccelMode);
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00;
             }
@@ -426,12 +439,13 @@ void *mainThread(void *arg0)
         if(libraryTest){
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting softwareResetMAX30101...");
             statusByte = softwareResetMAX30101(); //reset the MAX30101
-            if(statusByte){
+            if(statusByte || gi2cTransaction.status){ //if we had a sensor hub error or an I2C bus error
                 GPIO_write(Board_GPIO_LED0, CONFIG_GPIO_LED_ON);
                 GPIO_write(Board_GPIO_LED1, CONFIG_GPIO_LED_OFF);
                 if(!dataStream){
                     Display_printf(display, 0, 0, "softwareResetMAX30101 Failed."); //print that there was an issue with the function
                     Display_printf(display, 0, 0, "Error: 0x%02x", statusByte);
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00;
             }
@@ -450,12 +464,13 @@ void *mainThread(void *arg0)
 
         if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting configMAX32664...");
         uint8_t status = configMAX32664(outFormat, userMode, intThresh);
-        if(status){
+        if(status || gi2cTransaction.status){ //if we had a sensor hub error or an I2C bus error
             GPIO_write(Board_GPIO_LED0, CONFIG_GPIO_LED_ON);
             GPIO_write(Board_GPIO_LED1, CONFIG_GPIO_LED_OFF);
             if(!dataStream){
                 Display_printf(display, 0, 0, "configMAX32664 Failed."); //print that there was an issue with the function
                 Display_printf(display, 0, 0, "Error: 0x%02x", status);
+                i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
             }
             globalStatus &= 0x00;
         }
@@ -472,12 +487,13 @@ void *mainThread(void *arg0)
             if(!dataStream) Display_printf(display, 0, 0, "Delay to let FIFO fill");
             sleep(5); //sleep to allow FIFO to fill with some data
             body = readSensorData(&statusByte); //read appropriate sensor data
-            if(statusByte){
+            if(statusByte || gi2cTransaction.status){ //if there was a sensor hub error or an I2C bus error
                 GPIO_write(Board_GPIO_LED0, CONFIG_GPIO_LED_ON);
                 GPIO_write(Board_GPIO_LED1, CONFIG_GPIO_LED_OFF);
                 if(!dataStream){
                     Display_printf(display, 0, 0, "readSensorData Failed."); //print that there was an issue with the function
                     Display_printf(display, 0, 0, "Error: 0x%02x", statusByte);
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00;
             }
@@ -522,16 +538,21 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting readSensorData...");
             body = readSensorData(&statusByte); //read the sensor data
-            if(statusByte){ //if had a I2C transaction error from reading the sensor data
+            if(statusByte || gi2cTransaction.status){ //if had a I2C transaction error from reading the sensor data or an I2C bus error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading sensor data "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
             else{
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     if(libraryTest) Display_printf(display, 0, 0, "readSensorData Passed.");
+                    if( (userMode == MODE_TWO || userMode == MODE_ONE) && (outFormat == SENSOR_DATA || outFormat == SENSOR_AND_ALGORITHM) ){ //if using raw sensor data
+                        Display_printf(display, 0, 0, "IR LED count: %02u ", body.irLed); //print out the IR led count
+                        Display_printf(display, 0, 0, "Red LED count: %02u ", body.redLed); //print out the red LED count
+                    }
                     if( (userMode == MODE_TWO || userMode == MODE_ONE) && (outFormat == ALGO_DATA || outFormat == SENSOR_AND_ALGORITHM) ){ //if algorithm output and mode 1
                         Display_printf(display, 0, 0, "Heart Rate: %02u ", body.heartRate); //print out the heart rate
                         Display_printf(display, 0, 0, "HR Confidence: %u ", body.confidence); //print our HR confidence level
@@ -550,11 +571,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting readSensorHubVersion...");
             sensorHubVer = readSensorHubVersion(&statusByte); //read the sensor hub version
-            if(statusByte){ //if had a I2C transaction error
+            if(statusByte || gi2cTransaction.status){ //if had a I2C transaction error or an I2C bus error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading sensor hub version "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
                     Display_printf(display, 0, 0, "Sensor Hub Version: %d.%d.%d ", sensorHubVer.major, sensorHubVer.minor, sensorHubVer.revision); //print out the version
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -569,11 +591,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting readAlgorithmVersion...");
             algoVer = readAlgorithmVersion(&statusByte); //read the algorithm version
-            if(statusByte){ //if had a I2C transaction error
+            if(statusByte || gi2cTransaction.status){ //if had a I2C transaction error or an I2C bus error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading algorithm version "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
                     Display_printf(display, 0, 0, "Algorithm Version: %d.%d.%d ", algoVer.major, algoVer.minor, algoVer.revision); //print out the algorithm version
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -588,11 +611,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting readBootloaderVersion...");
             bootVer = readBootloaderVersion(&statusByte); //read the bootloader version
-            if(statusByte){ //if had a I2C transaction error
+            if(statusByte || gi2cTransaction.status){ //if had a I2C transaction error or I2C bus error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading bootloader version "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
                     Display_printf(display, 0, 0, "Bootloader Version: %d.%d.%d ", bootVer.major, bootVer.minor, bootVer.revision); //print out the bootloader version
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -607,11 +631,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting getMcuType...");
             mcuType = getMcuType(&statusByte); //get the MCU type of the biometric sensor hub
-            if(statusByte || (mcuType == ERR_UNKNOWN) ){ //if had a I2C transaction error OR we got an invalid MCU type
+            if(statusByte || (mcuType == ERR_UNKNOWN) || gi2cTransaction.status){ //if had a I2C transaction error OR we got an invalid MCU type OR an I2C bus error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading MCU Type "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
                     Display_printf(display, 0, 0, "mcyType: %u ", mcuType); //print out the read value
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -631,11 +656,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting readADCSampleRate...");
             adcRate = readADCSampleRate(&statusByte); //read the ADC sampling rate of the MAX30101 internal ADC
-            if(statusByte || (adcRate == ERR_UNKNOWN) ){ //if had a I2C transaction error OR got an invalid data reading
+            if(statusByte || (adcRate == ERR_UNKNOWN) || gi2cTransaction.status){ //if had a I2C transaction error OR got an invalid data reading OR an I2C bus error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading MAX30101 ADC Sampling Rate "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
                     Display_printf(display, 0, 0, "MAX30101 ADC Sampling Rate: %u ", adcRate); //print out the read value
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -650,11 +676,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting readADCRange...");
             adcRange = readADCRange(&statusByte); //read the ADC full scale range of MAX30101
-            if(statusByte || (adcRange == ERR_UNKNOWN) ){ //if had a I2C transaction error OR got an invalid data reading
+            if(statusByte || (adcRange == ERR_UNKNOWN) || gi2cTransaction.status){ //if had a I2C transaction error OR got an invalid data reading OR an I2C bus error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading MAX30101 ADC Full Scale Range "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
                     Display_printf(display, 0, 0, "MAX30101 ADC Full Scale Range: %u ", adcRange); //print out the read value
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -668,11 +695,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting ledPulseWidth...");
             ledPulseWidth = readPulseWidth(&statusByte); //read the LED pulse width of MAX30101 LEDs
-            if(statusByte || (ledPulseWidth == ERR_UNKNOWN) ){ //if had a I2C transaction error OR got an invalid data reading
+            if(statusByte || (ledPulseWidth == ERR_UNKNOWN) || gi2cTransaction.status){ //if had a I2C transaction error OR got an invalid data reading OR an I2C bus error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading MAX30101 LED Pulse Width "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
                     Display_printf(display, 0, 0, "MAX30101 LED Pulse Width: %u us ", ledPulseWidth); //print out the read value
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -687,7 +715,7 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting readPulseAmp...");
             ledStatus = readPulseAmp(ledArray, &statusByte); //read the
-            if(statusByte || (ledStatus == ERR_UNKNOWN) ){ //if had a I2C transaction error OR invalid data
+            if(statusByte || (ledStatus == ERR_UNKNOWN) || gi2cTransaction.status){ //if had a I2C transaction error OR invalid data OR I2C bus error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading LED Pulse Amplitude "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
@@ -695,6 +723,7 @@ void *mainThread(void *arg0)
                     Display_printf(display, 0, 0, "MAX30101 LED2 Pulse Amplitude: %f ", (float)ledArray[1] * 0.2f); //print out the LED2 pulse amplitude
                     Display_printf(display, 0, 0, "MAX30101 LED3 Pulse Amplitude: %f ", (float)ledArray[2] * 0.2f); //print out the LED3 pulse amplitude
                     Display_printf(display, 0, 0, "MAX30101 LED4 Pulse Amplitude: %f ", (float)ledArray[3] * 0.2f); //print out the LED4 pulse amplitude
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -712,11 +741,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting readMAX30101Mode...");
             operatingMode = readMAX30101Mode(&statusByte); //read the current operating mode of the MAX30101 (which LEDs are being used)
-            if(statusByte || (operatingMode == ERR_UNKNOWN) ){ //if had a I2C transaction error or invalid data
+            if(statusByte || (operatingMode == ERR_UNKNOWN) || gi2cTransaction.status){ //if had a I2C transaction error or invalid data
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading MAX30101 Operating Mode "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
                     Display_printf(display, 0, 0, "MAX30101 Operating Mode: %u ", operatingMode); //print out the read value
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -739,11 +769,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting readAlgoRange...");
             algoRange = readAlgoRange(&statusByte); //read the percent of the full scale ADC range that the AGC algo is using
-            if(statusByte || (algoRange > 100) ){ //if had a I2C transaction error
+            if(statusByte || (algoRange > 100) || gi2cTransaction.status){ //if had a I2C transaction error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading Algorithm ADC Range "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
                     Display_printf(display, 0, 0, "AGC Algorithm ADC Range: %u%% ", algoRange); //print out the read value
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -758,11 +789,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting readAlgoStepSize...");
             algoStepSize = readAlgoStepSize(&statusByte); //read the step size towards the target for the AGC algorithm
-            if(statusByte || (algoStepSize > 100) ){ //if had a I2C transaction error OR invalid data
+            if(statusByte || (algoStepSize > 100) || gi2cTransaction.status){ //if had a I2C transaction error OR invalid data
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading AGC algo step size "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
                     Display_printf(display, 0, 0, "AGC algo step size: %u%% ", algoStepSize); //print out the read value
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -777,11 +809,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting readAlgoSensitivity...");
             algoSensitivity = readAlgoSensitivity(&statusByte); //read the sensitivity of the AGC algorithm
-            if(statusByte || (algoSensitivity > 100) ){ //if had a I2C transaction error OR invalid data
+            if(statusByte || (algoSensitivity > 100) || gi2cTransaction.status){ //if had a I2C transaction error OR invalid data
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading AGC algo step size "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
                     Display_printf(display, 0, 0, "AGC Algorithm sensitivity: %u%% ", algoSensitivity); //print out the read value
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -796,11 +829,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting readAlgoSampleRate...");
             algoSampleRate = readAlgoSampleRate(&statusByte); //read the WHRM sample rate
-            if(statusByte){ //if had a I2C transaction error
+            if(statusByte || gi2cTransaction.status){ //if had a I2C transaction error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading WHRM sample rate "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
                     Display_printf(display, 0, 0, "WHRM Algorithm sample rate: %u%% ", algoSampleRate); //print out the read value
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -815,11 +849,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting I2CReadIntWithWriteByte (default height)...");
             defaultHeight = I2CReadIntWithWriteByte(0x51, 0x02, 0x07, &statusByte);
-            if(statusByte){ //if had a I2C transaction error
+            if(statusByte || gi2cTransaction.status){ //if had a I2C transaction error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading Default Algorithm Height "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
                     Display_printf(display, 0, 0, "Default Algorithm Height: %u ", defaultHeight); //print out the default algorithm height
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -834,11 +869,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting I2CReadInt (read external input FIFO num samples)...");
             extInputFifoSize = I2CReadInt(0x13, 0x04, &statusByte);
-            if(statusByte){ //if had a I2C transaction error
+            if(statusByte || gi2cTransaction.status){ //if had a I2C transaction error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading External Sensor Input FIFO Sample Number "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
                     Display_printf(display, 0, 0, "Number of External Sensor Input FIFO Samples: %u ", extInputFifoSize); //print out the external sensor input FIFO size
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -853,11 +889,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting I2CReadInt (read external input FIFO size for max samples)...");
             extInputFifoSize = I2CReadInt(0x13, 0x01, &statusByte);
-            if(statusByte){ //if had a I2C transaction error
+            if(statusByte || gi2cTransaction.status){ //if had a I2C transaction error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading Max samples External Sensor Input FIFO Size"); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", statusByte); //print out the status byte
                     Display_printf(display, 0, 0, "External Sensor Input FIFO Size for max number of samples FIFO can hold: %u ", extInputFifoSize); //print out the external sensor input FIFO size
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -873,9 +910,10 @@ void *mainThread(void *arg0)
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting readMaximFastCoef...");
             coefStatus = readMaximFastCoef(maximFastCoef); //get the Maxim Fast Coefficients
             if(coefStatus){ //if had a I2C transaction error
-                if(!dataStream){ //if we're not printing to serial in data logging format
+                if(!dataStream || gi2cTransaction.status){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading Maxim Fast Algo Coef "); //had error
                     Display_printf(display, 0, 0, "Status byte: 0x%02x ", coefStatus); //print out the status byte
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -893,11 +931,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting I2CRead32BitValue (read motion threshold)...");
             motionThreshold = I2CRead32BitValue(0x51, 0x05, 0x06, &statusByte);
-            if(statusByte){ //if had a I2C transaction error
+            if(statusByte || gi2cTransaction.status){ //if had a I2C transaction error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error reading motion threshold "); //indicate error
                     Display_printf(display, 0, 0, "Error: 0x%02x ", statusByte); //print error message
                     Display_printf(display, 0, 0, "Motion threshold: %d ", motionThreshold); //print error message
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -912,11 +951,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting I2CRead32BitValue (read coefA)...");
             coefA = I2CRead32BitValue(0x51, 0x02, 0x0B, &statusByte);
-            if(statusByte){ //if had a I2C transaction error
+            if(statusByte || gi2cTransaction.status){ //if had a I2C transaction error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error testing read 32-bit value "); //indicate error
                     Display_printf(display, 0, 0, "Error: 0x%02x ", statusByte); //print error message
                     Display_printf(display, 0, 0, "Read number: %d ", coefA); //print error message
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -931,11 +971,12 @@ void *mainThread(void *arg0)
 
             if(libraryTest && !dataStream) Display_printf(display, 0, 0, "\nTesting readMAX30101State...");
             maxState = readMAX30101State(&statusByte);
-            if(statusByte){ //if had a I2C transaction error
+            if(statusByte || gi2cTransaction.status){ //if had a I2C transaction error
                 if(!dataStream){ //if we're not printing to serial in data logging format
                     Display_printf(display, 0, 0, "Error testing readMAX30101State "); //indicate error
                     Display_printf(display, 0, 0, "Error: 0x%02x ", statusByte); //print error message
                     Display_printf(display, 0, 0, "Read state: %d ", maxState); //print error message
+                    i2cErrorHandler(&gi2cTransaction, display); //handle the I2C bus error
                 }
                 globalStatus &= 0x00; //put error into global status
             }
@@ -951,12 +992,14 @@ void *mainThread(void *arg0)
 
 
             if(!libraryTest && dataStream){ //if we want to log data and we're not testing the library, put it into usable format
-                Display_printf(display, 0, 0, "%02.2u,%u,%02.2u,%u,%d,%f,%u,%u,%u,%u,%f,%f,%f,%f,%u,%u,%u",
-                               body.heartRate, body.confidence, body.oxygen, body.status, body.extStatus, body.rValue,
-                               adcRate, adcRange, operatingMode, ledPulseWidth,
-                               (float)ledArray[0] * 0.2f, (float)ledArray[1] * 0.2f, (float)ledArray[2] * 0.2f, (float)ledArray[3] * 0.2f,
-                               algoRange, algoStepSize, algoSensitivity
-                                ); //print out data in format that is usable by Excel Data Stream
+//                Display_printf(display, 0, 0, "%02.2u,%u,%02.2u,%u,%d,%f,%u,%u,%u,%u,%f,%f,%f,%f,%u,%u,%u",
+//                               body.heartRate, body.confidence, body.oxygen, body.status, body.extStatus, body.rValue,
+//                               adcRate, adcRange, operatingMode, ledPulseWidth,
+//                               (float)ledArray[0] * 0.2f, (float)ledArray[1] * 0.2f, (float)ledArray[2] * 0.2f, (float)ledArray[3] * 0.2f,
+//                               algoRange, algoStepSize, algoSensitivity
+//                                ); //print out data in format that is usable by Excel Data Stream
+                Display_printf(display, 0, 0, "%02u,%02u,%02u,%02u,%02u,%02u,%02d,%02.2f",
+                               body.irLed, body.redLed, body.heartRate, body.confidence, body.oxygen, body.status, body.extStatus, body.rValue);
             }
 
 
@@ -1002,9 +1045,10 @@ void *mainThread(void *arg0)
             statusByte = 0;
 
 
-            usleep(1000); //sleep for 1ms
-            usleep(10000); //sleep for 10ms
-            sleep(1); //sleep for 1s
+//            usleep(1000); //sleep for 1ms
+//            usleep(10000); //sleep for 10ms
+            usleep(100000); //sleep for 100ms
+//            sleep(1); //sleep for 1s
 
         }
 
@@ -1043,4 +1087,53 @@ void *mainThread(void *arg0)
     }
 
     return (NULL);
+}
+
+
+
+/*
+ *  ======== i2cErrorHandler ========
+ */
+static void i2cErrorHandler(I2C_Transaction *transaction,
+    Display_Handle display)
+{
+    switch (transaction->status) {
+    case I2C_STATUS_TIMEOUT:
+        Display_printf(display, 0, 0, "I2C transaction timed out!");
+        break;
+    case I2C_STATUS_CLOCK_TIMEOUT:
+        Display_printf(display, 0, 0, "I2C serial clock line timed out!");
+        break;
+    case I2C_STATUS_ADDR_NACK:
+        Display_printf(display, 0, 0, "I2C slave address 0x%x not"
+            " acknowledged!", transaction->slaveAddress);
+        break;
+    case I2C_STATUS_DATA_NACK:
+        Display_printf(display, 0, 0, "I2C data byte not acknowledged!");
+        break;
+    case I2C_STATUS_ARB_LOST:
+        Display_printf(display, 0, 0, "I2C arbitration to another master!");
+        break;
+    case I2C_STATUS_INCOMPLETE:
+        Display_printf(display, 0, 0, "I2C transaction returned before completion!");
+        break;
+    case I2C_STATUS_BUS_BUSY:
+        Display_printf(display, 0, 0, "I2C bus is already in use!");
+        break;
+    case I2C_STATUS_CANCEL:
+        Display_printf(display, 0, 0, "I2C transaction cancelled!");
+        break;
+    case I2C_STATUS_INVALID_TRANS:
+        Display_printf(display, 0, 0, "I2C transaction invalid!");
+        break;
+    case I2C_STATUS_ERROR:
+        Display_printf(display, 0, 0, "I2C generic error!");
+        break;
+    case I2C_STATUS_SUCCESS:
+        Display_printf(display, 0, 0, "I2C transaction successful");
+        break;
+    default:
+        Display_printf(display, 0, 0, "I2C undefined error case!");
+        break;
+    }
 }

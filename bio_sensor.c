@@ -199,7 +199,7 @@ struct bioData readSensorData(uint8_t *statusByte){
 
     statusChauf = readSensorHubStatus(statusByte);
 
-    if(statusChauf == 0x01){ //if there was a communication error
+    if(statusChauf & 0x01){ //if there was a communication error (Err0[0] bit == Sensor Communication Problem)
         libData.irLed = 0;
         libData.redLed = 0;
         libData.heartRate = 0;
@@ -1740,7 +1740,10 @@ uint8_t I2CReadByte(uint8_t familyByte, uint8_t indexByte, uint8_t *statusByte){
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 0;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C write
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C write did not work
+        *statusByte = ERR_UNKNOWN; //set the status byte to be an error
+        return 0; //return a read byte of 0
+    }
 
     usleep(CMD_DELAY * 1000); //sleep for 6 milliseconds
 
@@ -1750,11 +1753,14 @@ uint8_t I2CReadByte(uint8_t familyByte, uint8_t indexByte, uint8_t *statusByte){
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 2;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C read
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C read did not work
+        *statusByte = ERR_UNKNOWN; //set the status byte to be an error
+        return 0; //return a read byte of 0
+    }
 
     *statusByte = localRxBuffer[0]; //save the status byte
 
-    if(localRxBuffer[0]){ //if we had an I2C transaction error
+    if(localRxBuffer[0] != SUCCESS){ //if we had an I2C transaction error
         return 0; //return 0
     }
     else{
@@ -1794,7 +1800,10 @@ uint8_t I2CReadBytewithWriteByte(uint8_t familyByte, uint8_t indexByte, uint8_t 
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 0;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C write
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C write did not work
+        *statusByte = ERR_UNKNOWN; //set the status byte to be an error
+        return 0; //return a read byte of 0
+    }
 
     usleep(CMD_DELAY * 1000); //sleep for 6 milliseconds
 
@@ -1804,11 +1813,14 @@ uint8_t I2CReadBytewithWriteByte(uint8_t familyByte, uint8_t indexByte, uint8_t 
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 2;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C read
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C read did not work
+        *statusByte = ERR_UNKNOWN; //set the status byte to be an error
+        return 0; //return a read byte of 0
+    }
 
     *statusByte = localRxBuffer[0]; //save the returned status byte from I2C transaction to the pointer
 
-    if(localRxBuffer[0]){ //if there was an I2C transaction error
+    if(localRxBuffer[0] != SUCCESS){ //if there was an I2C transaction error
         return 0; //return 0
     }
     else{
@@ -1837,6 +1849,7 @@ uint8_t I2CReadBytewithWriteByte(uint8_t familyByte, uint8_t indexByte, uint8_t 
  */
 uint8_t I2CReadFillArray(uint8_t familyByte, uint8_t indexByte, uint8_t arraySize, uint8_t *arraytoFill){
 
+    uint8_t arrayCount = 0;
     uint8_t localTxBuffer[2]; //Family Byte, Index Byte
     uint8_t localRxBuffer[1 + MAX30101_LED_ARRAY + MAXFAST_ARRAY_SIZE + MAXFAST_EXTENDED_DATA]; //Read Status Byte, data bytes (+12 for MAX30101 LED array, +6 for standard algorithm output, +5 for extended algorithm output)
     localTxBuffer[0] = familyByte; //set the family byte
@@ -1847,7 +1860,12 @@ uint8_t I2CReadFillArray(uint8_t familyByte, uint8_t indexByte, uint8_t arraySiz
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 0;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C write
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C write did not work
+        for(arrayCount = 0; arrayCount < arraySize; arrayCount++){ //for the full array
+            arraytoFill[arrayCount] = 0; //set all values to 0
+        }
+        return ERR_UNKNOWN; //return and error statusy byte
+    }
 
     usleep(CMD_DELAY * 1000); //sleep for 6 milliseconds
 
@@ -1857,9 +1875,13 @@ uint8_t I2CReadFillArray(uint8_t familyByte, uint8_t indexByte, uint8_t arraySiz
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = I2_READ_STATUS_BYTE_COUNT + arraySize;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C read
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C read did not work
+        for(arrayCount = 0; arrayCount < arraySize; arrayCount++){ //for the full array
+            arraytoFill[arrayCount] = 0; //set all values to 0
+        }
+        return ERR_UNKNOWN; //return and error statusy byte
+    }
 
-    int arrayCount = 0;
     if(localRxBuffer[0]){ //if the status byte is non-zero
         for(arrayCount = 0; arrayCount < arraySize; arrayCount++){
             arraytoFill[arrayCount] = 0; //set all values to 0
@@ -1904,7 +1926,10 @@ uint16_t I2CReadInt(uint8_t familyByte, uint8_t indexByte, uint8_t *statusByte){
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 0;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C write
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C write did not work
+        *statusByte = ERR_UNKNOWN; //set the status byte to be an error
+        return 0; //return a read byte of 0
+    }
 
     usleep(CMD_DELAY * 1000); //sleep for 6 milliseconds
 
@@ -1914,7 +1939,10 @@ uint16_t I2CReadInt(uint8_t familyByte, uint8_t indexByte, uint8_t *statusByte){
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 3;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C read
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C read did not work
+        *statusByte = ERR_UNKNOWN; //set the status byte to be an error
+        return 0; //return a read byte of 0
+    }
 
     *statusByte = localRxBuffer[0]; //save the status byte
 
@@ -1963,7 +1991,10 @@ uint16_t I2CReadIntWithWriteByte(uint8_t familyByte, uint8_t indexByte, uint8_t 
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 0;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C write
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C write did not work
+        *statusByte = ERR_UNKNOWN; //set the status byte to be an error
+        return 0; //return a read byte of 0
+    }
 
     usleep(CMD_DELAY * 1000); //sleep for 6 milliseconds
 
@@ -1973,7 +2004,10 @@ uint16_t I2CReadIntWithWriteByte(uint8_t familyByte, uint8_t indexByte, uint8_t 
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 3;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C read
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C read did not work
+        *statusByte = ERR_UNKNOWN; //set the status byte to be an error
+        return 0; //return a read byte of 0
+    }
 
     *statusByte = localRxBuffer[0]; //save the read status byte of I2C transaction to the pointer
     uint16_t returnInt = 0;
@@ -2022,7 +2056,10 @@ int32_t I2CRead32BitValue(uint8_t familyByte, uint8_t indexByte, uint8_t dataByt
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 0;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C write
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C write did not work
+        *statusByte = ERR_UNKNOWN; //set the status byte to be an error
+        return 0; //return a read byte of 0
+    }
 
     usleep(CMD_DELAY * 1000); //sleep for 6 milliseconds
 
@@ -2032,8 +2069,10 @@ int32_t I2CRead32BitValue(uint8_t familyByte, uint8_t indexByte, uint8_t dataByt
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = I2_READ_STATUS_BYTE_COUNT + sizeof(int32_t);
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C read
-
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C read did not work
+        *statusByte = ERR_UNKNOWN; //set the status byte to be an error
+        return 0; //return a read byte of 0
+    }
     *statusByte = localRxBuffer[0]; //save status byte
 
     if(localRxBuffer[0]){ //if we had a transaction error
@@ -2071,6 +2110,7 @@ int32_t I2CRead32BitValue(uint8_t familyByte, uint8_t indexByte, uint8_t dataByt
  */
 uint8_t I2CReadMultiple32BitValues(uint8_t familyByte, uint8_t indexByte, uint8_t dataByte, uint8_t numReads, int32_t *numArray){
 
+    uint8_t arrayCount = 0;
     uint8_t localTxBuffer[3]; //Family Byte, Index Byte, Write Byte 0
     uint8_t localRxBuffer[I2_READ_STATUS_BYTE_COUNT + sizeof(int32_t) * 3]; //Read Status Byte, data bytes (4-bytes * 3)
     localTxBuffer[0] = familyByte; //set the family byte
@@ -2082,7 +2122,12 @@ uint8_t I2CReadMultiple32BitValues(uint8_t familyByte, uint8_t indexByte, uint8_
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 0;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C write
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C write did not work
+        for(arrayCount = 0; arrayCount < numReads; arrayCount++){ //for everything in the array
+            numArray[arrayCount] = 0; //set it to zero
+        }
+        return ERR_UNKNOWN; //return an error status byte
+    }
 
     usleep(CMD_DELAY * 1000); //sleep for 6 milliseconds
 
@@ -2092,9 +2137,13 @@ uint8_t I2CReadMultiple32BitValues(uint8_t familyByte, uint8_t indexByte, uint8_
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = I2_READ_STATUS_BYTE_COUNT + sizeof(int32_t) * numReads;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C read
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C read did not work
+        for(arrayCount = 0; arrayCount < numReads; arrayCount++){ //for everything in the array
+            numArray[arrayCount] = 0; //set it to zero
+        }
+        return ERR_UNKNOWN; //return an error status byte
+    }
 
-    int arrayCount = 0;
     if(localRxBuffer[0]){ //if the status byte is non-zero
         for(arrayCount = 0; arrayCount < numReads; arrayCount++){ //for everything in the array
             numArray[arrayCount] = 0; //set it to zero
@@ -2144,7 +2193,9 @@ uint8_t I2CWriteByte(uint8_t familyByte, uint8_t indexByte, uint8_t dataByte){
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 0;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C write
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C write did not work
+        return ERR_UNKNOWN; //return an error status byte
+    }
 
     usleep(CMD_DELAY * 1000); //sleep for 6 milliseconds
 
@@ -2154,7 +2205,9 @@ uint8_t I2CWriteByte(uint8_t familyByte, uint8_t indexByte, uint8_t dataByte){
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 1; //expect a status byte
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C read
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C read did not work
+        return ERR_UNKNOWN; //return a read byte of 0
+    }
 
     return localRxBuffer[0]; //return the status byte
 }
@@ -2191,7 +2244,9 @@ uint8_t I2CWrite2Bytes(uint8_t familyByte, uint8_t indexByte, uint8_t dataByte0,
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 0;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C write
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C write did not work
+        return ERR_UNKNOWN; //return an error status byte
+    }
 
     usleep(CMD_DELAY * 1000); //sleep for 6 milliseconds
 
@@ -2201,7 +2256,9 @@ uint8_t I2CWrite2Bytes(uint8_t familyByte, uint8_t indexByte, uint8_t dataByte0,
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 1; //expect a status byte
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C read
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C read did not work
+        return ERR_UNKNOWN; //return an error status byte
+    }
 
     return localRxBuffer[0]; //return the status byte of the I2C transaction
 }
@@ -2238,7 +2295,9 @@ uint8_t I2CenableWriteByte(uint8_t familyByte, uint8_t indexByte, uint8_t dataBy
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 0;
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C write
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C write did not work
+        return ERR_UNKNOWN; //return an error status byte
+    }
 
     usleep(ENABLE_CMD_DELAY * 1000); //sleep for 45 milliseconds
 
@@ -2248,7 +2307,9 @@ uint8_t I2CenableWriteByte(uint8_t familyByte, uint8_t indexByte, uint8_t dataBy
     gi2cTransaction.readBuf = localRxBuffer;
     gi2cTransaction.readCount = 1; //expect a status byte
 
-    I2C_transfer(gi2cHandle, &gi2cTransaction); //I2C read
+    if(!I2C_transfer(gi2cHandle, &gi2cTransaction)){ //if I2C write did not work
+        return ERR_UNKNOWN; //return an error status byte
+    }
 
     return localRxBuffer[0]; //return the status byte
 }

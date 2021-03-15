@@ -102,6 +102,7 @@ kk
 #define WRITE_EXTERNAL_TO_FIFO 0x00
 
 #define BIO_ADDRESS 0x55;
+#define SUCCESS 0x00
 
 
 /**
@@ -149,17 +150,19 @@ struct sensorAttr {
 // are indicators of success or failure of the previous transmission.
 enum READ_STATUS_BYTE_VALUE {
 
-  SUCCESS                  = 0x00,
-  ERR_UNAVAIL_CMD,
-  ERR_UNAVAIL_FUNC,
-  ERR_DATA_FORMAT,
-  ERR_INPUT_VALUE,
-  ERR_TRY_AGAIN,
-  ERR_BTLDR_GENERAL        = 0x80,
-  ERR_BTLDR_CHECKSUM,
-  ERR_BTLDR_AUTH,
-  ERR_BTLDR_INVALID_APP,
-  ERR_UNKNOWN              = 0xFF
+//  SUCCESS                  = 0x00, //comment out when this is already declared in another file
+  ERR_UNAVAIL_CMD          = 0x01, //Illegal Family Byte and/or Index Byte was used. Verify that the Family Byte, Index Byte are valid for the host command sent. Verify that the latest .msbl is flashed.
+  ERR_UNAVAIL_FUNC,                //This function is not implemented. Verify that the Index Byte and Write Byte(s) are valid for the host command sent. Verify that the latest .msbl is flashed.
+  ERR_DATA_FORMAT,                 //Incorrect number of bytes sent for the requested Family Byte. Verify that the correct number of bytes are sent for the host command. Verify that the latest .msbl is flashed.
+  ERR_INPUT_VALUE,                 //Illegal configuration value was attempted to be set. Verify that the Index Byte is correct for Family Byte 0x44. Verify that the report period is not 0 for host command 0x10 0x02. Verify that the Write byte for host command 0x10 0x03 is in the valid range specified. Verify that the latest .msbl is flashed.
+  ERR_INVALID_MODE         = 0x05, //Application mode: Not used in application mode.
+  ERR_BTLDR_TRY_AGAIN      = 0x05, //Bootloader mode: Device is busy. Insert delay and resend the host command.
+  ERR_BTLDR_GENERAL        = 0x80, //General error while receiving/flashing a page during the bootloader sequence. Not used
+  ERR_BTLDR_CHECKSUM,              //Bootloader checksum error while decrypting/checking page data. Verify that the keyed .msbl file is compatible with MAX32664A/B/C/D.
+  ERR_BTLDR_AUTH,                  //Bootloader authorization error. Verify that the keyed .msbl file is compatible with MAX32664A/B/C/D.
+  ERR_BTLDR_INVALID_APP,           //Bootloader detected that the application is not valid
+  ERR_TRY_AGAIN            = 0xFE, //Device is busy, try again. Increase the delay before the command and increase the CMD_DELAY.
+  ERR_UNKNOWN              = 0xFF  //Unknown Error. Verify that the communications to the AFE/KX-122 are correct by reading the PART_ID/WHO_AM_I register. For MAX32664B/C, the MAX32664 is in deep sleep unless the host sets the MFIO pin low 250us before and during the I2C communications.
 
 };
 
